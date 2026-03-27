@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICAT — Image Comparison & Analysis Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green: #76b900;
+    --green-dim: rgba(118,185,0,0.12);
+    --green-glow: rgba(118,185,0,0.25);
+    --bg: #080808;
+    --panel: #0f0f0f;
+    --panel2: #141414;
+    --border: #1e1e1e;
+    --border2: #2a2a2a;
+    --text: #d8d8d8;
+    --text-dim: #666;
+    --text-muted: #444;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    overflow: hidden;
+  }
+
+  /* ── LAYOUT ───────────────────────────────────────── */
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+  }
+
+  /* ── HEADER ───────────────────────────────────────── */
+  #header {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: 48px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    padding: 0 16px;
+    position: relative;
+  }
+  #header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, var(--green) 0%, transparent 40%);
+    opacity: .6;
+  }
+
+  .logo-block {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-right: 20px;
+    border-right: 1px solid var(--border2);
+    margin-right: 16px;
+  }
+  .logo-eye {
+    width: 26px; height: 26px;
+    border: 1.5px solid var(--green);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .logo-eye::before {
+    content: '';
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+  }
+  .logo-text {
+    font-family: var(--mono);
+    font-size: 15px;
+    letter-spacing: 3px;
+    color: var(--green);
+  }
+  .logo-sub {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    letter-spacing: 1px;
+    margin-top: 1px;
+  }
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .sep { width: 1px; height: 22px; background: var(--border2); margin: 0 10px; flex-shrink: 0; }
+
+  .tb-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 5px 12px;
+    border-radius: 2px;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .tb-btn:hover { border-color: #3a3a3a; color: #aaa; }
+  .tb-btn.active {
+    border-color: var(--green);
+    color: var(--green);
+    background: var(--green-dim);
+    box-shadow: 0 0 8px var(--green-glow);
+  }
+  .tb-btn.upload {
+    border-color: #252525;
+    color: #888;
+  }
+  .tb-btn.upload:hover { border-color: var(--green); color: var(--green); }
+  .tb-btn.upload span { opacity: .6; margin-right: 5px; }
+
+  #header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .version-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 2px;
+  }
+
+  /* ── MAIN STAGE ───────────────────────────────────── */
+  #main {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    background: #060606;
+    cursor: grab;
+  }
+  #main:active { cursor: grabbing; }
+  #main.panning { cursor: grabbing; }
+
+  /* checkerboard for transparency hint */
+  #main::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(45deg, #0d0d0d 25%, transparent 25%),
+      linear-gradient(-45deg, #0d0d0d 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #0d0d0d 75%),
+      linear-gradient(-45deg, transparent 75%, #0d0d0d 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color: #080808;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  /* ── DROP SCREEN ──────────────────────────────────── */
+  #drop-screen {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: rgba(6,6,6,.95);
+  }
+  #drop-screen.hide { display: none; }
+  .drop-frame {
+    border: 1px solid var(--border2);
+    padding: 48px 64px;
+    text-align: center;
+    position: relative;
+    max-width: 480px;
+    width: 90%;
+  }
+  .drop-frame::before, .drop-frame::after {
+    content: '';
+    position: absolute;
+    width: 16px; height: 16px;
+    border-color: var(--green);
+    border-style: solid;
+  }
+  .drop-frame::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
+  .drop-frame::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+
+  .drop-icon-wrap {
+    width: 60px; height: 60px;
+    border: 1px solid var(--border2);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+    color: var(--green);
+    font-size: 22px;
+  }
+  .drop-title {
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--text);
+    letter-spacing: 2px;
+    margin-bottom: 8px;
+  }
+  .drop-sub {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+    margin-bottom: 28px;
+    line-height: 1.7;
+  }
+  .drop-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .drop-btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    padding: 8px 20px;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: all .15s;
+    border-radius: 2px;
+  }
+  .drop-btn:hover, .drop-btn.primary { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+  /* ── VIEWS ────────────────────────────────────────── */
+  #slider-view, #side-view {
+    position: absolute;
+    inset: 0;
+    display: none;
+    z-index: 1;
+  }
+  #slider-view.show, #side-view.show { display: block; }
+  #side-view.show { display: flex; }
+
+  #slider-canvas { display: block; width: 100%; height: 100%; }
+
+  #divider {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green-glow);
+    z-index: 20;
+    cursor: ew-resize;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  #divider-hit {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 28px;
+    transform: translateX(-50%);
+    z-index: 21;
+    cursor: ew-resize;
+  }
+  #divider-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 1.5px solid var(--green);
+    box-shadow: 0 0 12px var(--green-glow);
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  #divider-handle svg { color: var(--green); }
+
+  .side-pane {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .side-pane canvas {
+    display: block;
+    width: 100%; height: 100%;
+    position: absolute; inset: 0;
+  }
+  #side-divider-bar {
+    width: 1px; flex-shrink: 0;
+    background: var(--border2);
+    box-shadow: 0 0 6px var(--green-glow);
+  }
+
+  /* ── LABELS ───────────────────────────────────────── */
+  .img-label {
+    position: absolute;
+    top: 14px;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    background: rgba(8,8,8,.85);
+    border: 1px solid var(--border2);
+    padding: 4px 10px;
+    border-radius: 2px;
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+    gap: 6px;
+  }
+  .img-label.left  { left: 14px; }
+  .img-label.right { right: 14px; }
+  .label-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .label-dot.b { background: #00a8ff; }
+  .img-label input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #ccc;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .5px;
+    width: 110px;
+    cursor: text;
+  }
+  .img-label input::placeholder { color: var(--text-muted); }
+
+  .no-img-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    z-index: 5;
+    transition: background .2s;
+  }
+  .no-img-overlay:hover { background: rgba(118,185,0,.04); }
+  .no-img-overlay svg { opacity: .2; color: var(--green); }
+  .no-img-overlay span { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+
+  /* ── BOTTOM BAR ───────────────────────────────────── */
+  #bottom-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 38px;
+    padding: 0 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    z-index: 40;
+  }
+  .bar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  #zoom-range {
+    -webkit-appearance: none;
+    width: 130px;
+    height: 3px;
+    background: var(--border2);
+    border-radius: 2px;
+    outline: none;
+    accent-color: var(--green);
+  }
+  #zoom-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--green);
+    cursor: pointer;
+    box-shadow: 0 0 5px var(--green-glow);
+  }
+  #zoom-display {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--green);
+    min-width: 42px;
+  }
+  .bar-btn {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 1px;
+    padding: 3px 9px;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all .12s;
+  }
+  .bar-btn:hover { color: #aaa; border-color: #333; }
+
+  #coord-display {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: .5px;
+    min-width: 100px;
+    text-align: right;
+  }
+  #pixel-info {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: .5px;
+    margin-left: 8px;
+  }
+
+  /* drag highlight */
+  #main.drag-over::after {
+    content: 'DROP IMAGES';
+    position: absolute;
+    inset: 0;
+    background: rgba(118,185,0,.06);
+    border: 2px dashed var(--green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 22px;
+    color: var(--green);
+    letter-spacing: 4px;
+    z-index: 100;
+    pointer-events: none;
+  }
+
+  input[type=file] { display: none; }
+
+  @keyframes fadeIn { from { opacity:0; transform: translateY(6px); } to { opacity:1; transform:none; } }
+  #drop-screen { animation: fadeIn .3s ease; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo-block">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="logo-eye"></div>
+          <span class="logo-text">ICAT</span>
+        </div>
+        <div class="logo-sub">Image Comparison &amp; Analysis Tool</div>
+      </div>
+    </div>
+
+    <div class="toolbar-group">
+      <button class="tb-btn active" id="btn-slider">⟺ SLIDER</button>
+      <button class="tb-btn" id="btn-side">▐▌ SIDE BY SIDE</button>
+    </div>
+    <div class="sep"></div>
+    <div class="toolbar-group">
+      <button class="tb-btn upload" onclick="triggerUpload('A')"><span>A</span> Upload Image A</button>
+      <button class="tb-btn upload" onclick="triggerUpload('B')"><span>B</span> Upload Image B</button>
+    </div>
+
+    <div id="header-right">
+      <span class="version-tag">v1.0</span>
+    </div>
+  </div>
+
+  <!-- STAGE -->
+  <div id="main">
+    <!-- Drop screen -->
+    <div id="drop-screen">
+      <div class="drop-frame">
+        <div class="drop-icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+        </div>
+        <div class="drop-title">LOAD IMAGES</div>
+        <div class="drop-sub">Upload two images to compare them<br>side-by-side or with a slider overlay</div>
+        <div class="drop-actions">
+          <button class="drop-btn primary" onclick="triggerUpload('A')">Upload Image A</button>
+          <button class="drop-btn" onclick="triggerUpload('B')">Upload Image B</button>
+        </div>
+        <div style="margin-top:20px; font-family:var(--mono);font-size:10px;color:var(--text-muted)">or drag & drop two images anywhere</div>
+      </div>
+    </div>
+
+    <!-- Slider view -->
+    <div id="slider-view">
+      <canvas id="slider-canvas"></canvas>
+      <div id="divider">
+        <div id="divider-handle">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M15 18l-6-6 6-6M9 18l6-6-6-6" style="transform:scaleX(.7);transform-origin:center"/>
+          </svg>
+        </div>
+      </div>
+      <div id="divider-hit"></div>
+      <div class="img-label left" id="label-sA">
+        <div class="label-dot"></div>
+        <input id="inp-sA" value="Image A" placeholder="Label A" />
+      </div>
+      <div class="img-label right" id="label-sB">
+        <div class="label-dot b"></div>
+        <input id="inp-sB" value="Image B" placeholder="Label B" />
+      </div>
+    </div>
+
+    <!-- Side-by-side view -->
+    <div id="side-view">
+      <div class="side-pane" id="pane-A">
+        <canvas id="canvas-A"></canvas>
+        <div class="no-img-overlay" id="noA" onclick="triggerUpload('A')">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>Click to load Image A</span>
+        </div>
+        <div class="img-label left" id="label-pA">
+          <div class="label-dot"></div>
+          <input id="inp-pA" value="Image A" placeholder="Label A" />
+        </div>
+      </div>
+      <div id="side-divider-bar"></div>
+      <div class="side-pane" id="pane-B">
+        <canvas id="canvas-B"></canvas>
+        <div class="no-img-overlay" id="noB" onclick="triggerUpload('B')">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>Click to load Image B</span>
+        </div>
+        <div class="img-label right" id="label-pB">
+          <div class="label-dot b"></div>
+          <input id="inp-pB" value="Image B" placeholder="Label B" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR -->
+  <div id="bottom-bar">
+    <span class="bar-label">ZOOM</span>
+    <input type="range" id="zoom-range" min="10" max="500" value="100" step="1">
+    <span id="zoom-display">100%</span>
+    <div class="sep"></div>
+    <button class="bar-btn" onclick="resetView()">RESET</button>
+    <button class="bar-btn" onclick="fitView()">FIT</button>
+    <span id="coord-display">x: — &nbsp; y: —</span>
+    <span id="pixel-info"></span>
+  </div>
+
+</div>
+
+<input type="file" id="fileA" accept="image/*" onchange="loadFile(event,'A')">
+<input type="file" id="fileB" accept="image/*" onchange="loadFile(event,'B')">
+
+<script>
+const S = {
+  mode: 'slider',
+  imgA: null, imgB: null,
+  zoom: 1, panX: 0, panY: 0,
+  sliderX: 0.5,
+  draggingSlider: false,
+  isPanning: false, panLast: null,
+};
+
+// ── UPLOAD ─────────────────────────────────────────────
+function triggerUpload(w) { document.getElementById('file'+w).click(); }
+function loadFile(e, w) {
+  const f = e.target.files[0]; if (!f) return;
+  e.target.value = '';
+  loadBlob(f, w);
+}
+function loadBlob(f, w) {
+  const img = new Image();
+  img.onload = () => {
+    S['img'+w] = img;
+    afterLoad();
+  };
+  img.src = URL.createObjectURL(f);
+}
+function afterLoad() {
+  if (!S.imgA && !S.imgB) return;
+  document.getElementById('drop-screen').classList.add('hide');
+  if (S.imgA) document.getElementById('noA').style.display = 'none';
+  if (S.imgB) document.getElementById('noB').style.display = 'none';
+  syncLabels();
+  applyMode();
+  fitView();
+}
+
+// ── MODE ───────────────────────────────────────────────
+function setMode(m) {
+  S.mode = m;
+  document.getElementById('btn-slider').classList.toggle('active', m === 'slider');
+  document.getElementById('btn-side').classList.toggle('active', m === 'side');
+  applyMode();
+  render();
+}
+function applyMode() {
+  document.getElementById('slider-view').className = S.mode === 'slider' ? 'show' : '';
+  document.getElementById('side-view').className   = S.mode === 'side'   ? 'show' : '';
+}
+document.getElementById('btn-slider').onclick = () => setMode('slider');
+document.getElementById('btn-side').onclick   = () => setMode('side');
+
+// ── RENDER ─────────────────────────────────────────────
+function getStage() { return document.getElementById('main'); }
+
+function drawImgFit(ctx, img, panX, panY, zoom, alpha) {
+  if (!img) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const scale = Math.min(cw / img.width, ch / img.height) * zoom;
+  const iw = img.width * scale, ih = img.height * scale;
+  const x = (cw - iw) / 2 + panX, y = (ch - ih) / 2 + panY;
+  ctx.globalAlpha = alpha ?? 1;
+  ctx.drawImage(img, x, y, iw, ih);
+  ctx.globalAlpha = 1;
+}
+
+function renderSlider() {
+  const cv = document.getElementById('slider-canvas');
+  const stage = getStage();
+  cv.width  = stage.clientWidth;
+  cv.height = stage.clientHeight;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const sx = Math.round(cv.width * S.sliderX);
+
+  if (S.imgA) {
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, sx, cv.height); ctx.clip();
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, cv.width, cv.height);
+    drawImgFit(ctx, S.imgA, S.panX, S.panY, S.zoom);
+    ctx.restore();
+  }
+  if (S.imgB) {
+    ctx.save(); ctx.beginPath(); ctx.rect(sx, 0, cv.width - sx, cv.height); ctx.clip();
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, cv.width, cv.height);
+    drawImgFit(ctx, S.imgB, S.panX, S.panY, S.zoom);
+    ctx.restore();
+  }
+
+  const div = document.getElementById('divider');
+  const hit = document.getElementById('divider-hit');
+  div.style.left = sx + 'px';
+  hit.style.left = sx + 'px';
+}
+
+function renderSide() {
+  ['A', 'B'].forEach(w => {
+    const cv   = document.getElementById('canvas-' + w);
+    const pane = document.getElementById('pane-' + w);
+    cv.width  = pane.clientWidth;
+    cv.height = pane.clientHeight;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, cv.width, cv.height);
+    if (S['img'+w]) drawImgFit(ctx, S['img'+w], S.panX, S.panY, S.zoom);
+  });
+}
+
+function render() {
+  if (S.mode === 'slider') renderSlider();
+  else renderSide();
+}
+
+// ── ZOOM ───────────────────────────────────────────────
+function setZoom(v) {
+  S.zoom = v / 100;
+  document.getElementById('zoom-range').value = v;
+  document.getElementById('zoom-display').textContent = Math.round(v) + '%';
+  render();
+}
+function resetView() { S.panX = 0; S.panY = 0; setZoom(100); }
+function fitView() {
+  S.panX = 0; S.panY = 0;
+  const stage = getStage();
+  const img = S.imgA || S.imgB;
+  if (!img) { setZoom(100); return; }
+  const fw = S.mode === 'side' ? stage.clientWidth / 2 : stage.clientWidth;
+  const scale = Math.min(fw / img.width, stage.clientHeight / img.height);
+  const pct = Math.round(scale * 100);
+  setZoom(Math.max(10, Math.min(500, pct)));
+}
+
+document.getElementById('zoom-range').oninput = e => setZoom(parseInt(e.target.value));
+
+// ── SLIDER DRAG ────────────────────────────────────────
+const hitEl = document.getElementById('divider-hit');
+hitEl.addEventListener('mousedown', e => {
+  S.draggingSlider = true;
+  e.stopPropagation();
+  e.preventDefault();
+});
+hitEl.addEventListener('touchstart', e => {
+  S.draggingSlider = true;
+  e.stopPropagation();
+}, { passive: true });
+
+// ── PAN ────────────────────────────────────────────────
+const mainEl = document.getElementById('main');
+mainEl.addEventListener('mousedown', e => {
+  if (e.target.closest('#divider-hit') || e.target.closest('.img-label') || e.target.closest('.no-img-overlay')) return;
+  S.isPanning = true;
+  S.panLast = { x: e.clientX, y: e.clientY };
+  mainEl.classList.add('panning');
+});
+mainEl.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    S.isPanning = true;
+    S.panLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+}, { passive: true });
+
+document.addEventListener('mousemove', e => {
+  if (S.draggingSlider) {
+    const r = mainEl.getBoundingClientRect();
+    S.sliderX = Math.max(0.01, Math.min(0.99, (e.clientX - r.left) / r.width));
+    renderSlider();
+    return;
+  }
+  if (S.isPanning && S.panLast) {
+    S.panX += e.clientX - S.panLast.x;
+    S.panY += e.clientY - S.panLast.y;
+    S.panLast = { x: e.clientX, y: e.clientY };
+    render();
+  }
+  // coord readout
+  updateCoords(e.clientX, e.clientY);
+});
+
+document.addEventListener('touchmove', e => {
+  if (S.draggingSlider && e.touches.length === 1) {
+    const r = mainEl.getBoundingClientRect();
+    S.sliderX = Math.max(0.01, Math.min(0.99, (e.touches[0].clientX - r.left) / r.width));
+    renderSlider();
+  } else if (S.isPanning && S.panLast && e.touches.length === 1) {
+    S.panX += e.touches[0].clientX - S.panLast.x;
+    S.panY += e.touches[0].clientY - S.panLast.y;
+    S.panLast = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    render();
+  }
+}, { passive: true });
+
+document.addEventListener('mouseup', () => {
+  S.draggingSlider = false;
+  S.isPanning = false;
+  S.panLast = null;
+  mainEl.classList.remove('panning');
+});
+document.addEventListener('touchend', () => {
+  S.draggingSlider = false;
+  S.isPanning = false;
+  S.panLast = null;
+});
+
+// ── SCROLL ZOOM ────────────────────────────────────────
+mainEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -8 : 8;
+  const nv = Math.max(10, Math.min(500, Math.round(S.zoom * 100) + delta));
+  setZoom(nv);
+}, { passive: false });
+
+// ── COORD READOUT ──────────────────────────────────────
+function updateCoords(cx, cy) {
+  const img = S.imgA || S.imgB;
+  if (!img) return;
+  const r = mainEl.getBoundingClientRect();
+  const stage = mainEl;
+  const cw = r.width, ch = r.height;
+  const scale = Math.min(cw / img.width, ch / img.height) * S.zoom;
+  const ix = (cw - img.width * scale) / 2 + S.panX;
+  const iy = (ch - img.height * scale) / 2 + S.panY;
+  const px = Math.round((cx - r.left - ix) / scale);
+  const py = Math.round((cy - r.top  - iy) / scale);
+  if (px >= 0 && px <= img.width && py >= 0 && py <= img.height) {
+    document.getElementById('coord-display').textContent = 'x: ' + px + '  y: ' + py;
+  } else {
+    document.getElementById('coord-display').textContent = 'x: —  y: —';
+  }
+}
+
+// ── DRAG & DROP FILES ──────────────────────────────────
+mainEl.addEventListener('dragover', e => { e.preventDefault(); mainEl.classList.add('drag-over'); });
+mainEl.addEventListener('dragleave', () => mainEl.classList.remove('drag-over'));
+mainEl.addEventListener('drop', e => {
+  e.preventDefault();
+  mainEl.classList.remove('drag-over');
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  if (files[0]) loadBlob(files[0], 'A');
+  if (files[1]) loadBlob(files[1], 'B');
+});
+// Also allow drop on drop-screen
+document.getElementById('drop-screen').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('drop-screen').addEventListener('drop', e => {
+  e.preventDefault();
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  if (files[0]) loadBlob(files[0], 'A');
+  if (files[1]) loadBlob(files[1], 'B');
+});
+
+// ── LABEL SYNC ─────────────────────────────────────────
+function syncLabels() {
+  // sync A inputs
+  ['inp-sA', 'inp-pA'].forEach(id => {
+    document.getElementById(id).oninput = function() {
+      document.getElementById('inp-sA').value = this.value;
+      document.getElementById('inp-pA').value = this.value;
+    };
+  });
+  ['inp-sB', 'inp-pB'].forEach(id => {
+    document.getElementById(id).oninput = function() {
+      document.getElementById('inp-sB').value = this.value;
+      document.getElementById('inp-pB').value = this.value;
+    };
+  });
+}
+syncLabels();
+
+// ── RESIZE ─────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(render, 80);
+});
+
+// init
+applyMode();
+render();
+</script>
+</body>
+</html>
