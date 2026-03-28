@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICAT — Image Comparison & Analysis Tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #76b900;
+    --green-dim: rgba(118,185,0,0.12);
+    --green-glow: rgba(118,185,0,0.25);
+    --bg: #080808;
+    --panel: #0f0f0f;
+    --border: #1e1e1e;
+    --border2: #2a2a2a;
+    --text: #d8d8d8;
+    --text-dim: #666;
+    --text-muted: #444;
+    --mono: 'Share Tech Mono', monospace;
+    --sans: 'Barlow', sans-serif;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; overflow: hidden; }
+  #app { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+
+  /* HEADER */
+  #header {
+    display: flex; align-items: center; gap: 0;
+    height: 48px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0; padding: 0 16px; position: relative;
+  }
+  #header::after {
+    content: ''; position: absolute; bottom: -1px; left: 0; right: 0;
+    height: 1px; background: linear-gradient(90deg, var(--green) 0%, transparent 40%); opacity: .6;
+  }
+  .logo-block { display: flex; align-items: center; gap: 10px; padding-right: 20px; border-right: 1px solid var(--border2); margin-right: 16px; }
+  .logo-eye { width: 26px; height: 26px; border: 1.5px solid var(--green); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .logo-eye::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .logo-text { font-family: var(--mono); font-size: 15px; letter-spacing: 3px; color: var(--green); }
+  .logo-sub { font-size: 10px; color: var(--text-muted); font-family: var(--mono); letter-spacing: 1px; margin-top: 1px; }
+  .toolbar-group { display: flex; align-items: center; gap: 6px; }
+  .sep { width: 1px; height: 22px; background: var(--border2); margin: 0 10px; flex-shrink: 0; }
+  .tb-btn {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 1px;
+    padding: 5px 12px; border-radius: 2px; border: 1px solid var(--border2);
+    background: transparent; color: var(--text-dim); cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .tb-btn:hover { border-color: #3a3a3a; color: #aaa; }
+  .tb-btn.active { border-color: var(--green); color: var(--green); background: var(--green-dim); box-shadow: 0 0 8px var(--green-glow); }
+  .tb-btn.upload { border-color: #252525; color: #888; }
+  .tb-btn.upload:hover { border-color: var(--green); color: var(--green); }
+  .tb-btn.upload span { opacity: .6; margin-right: 5px; }
+  .tb-btn.share-btn { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+  .tb-btn.share-btn:hover { background: rgba(118,185,0,.2); }
+  .tb-btn.share-btn:disabled { opacity: .4; cursor: not-allowed; }
+  #header-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .version-tag { font-family: var(--mono); font-size: 10px; color: var(--text-muted); border: 1px solid var(--border); padding: 2px 7px; border-radius: 2px; }
+
+  /* STAGE */
+  #main { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #060606; cursor: grab; }
+  #main:active { cursor: grabbing; }
+  #main::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(45deg,#0d0d0d 25%,transparent 25%), linear-gradient(-45deg,#0d0d0d 25%,transparent 25%), linear-gradient(45deg,transparent 75%,#0d0d0d 75%), linear-gradient(-45deg,transparent 75%,#0d0d0d 75%);
+    background-size: 20px 20px; background-position: 0 0, 0 10px, 10px -10px, -10px 0px; background-color: #080808; z-index: 0; pointer-events: none;
+  }
+
+  /* DROP SCREEN */
+  #drop-screen { position: absolute; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(6,6,6,.95); }
+  #drop-screen.hide { display: none; }
+  .drop-frame { border: 1px solid var(--border2); padding: 48px 64px; text-align: center; position: relative; max-width: 480px; width: 90%; }
+  .drop-frame::before { content: ''; position: absolute; top: -1px; left: -1px; width: 16px; height: 16px; border-top: 2px solid var(--green); border-left: 2px solid var(--green); }
+  .drop-frame::after  { content: ''; position: absolute; bottom: -1px; right: -1px; width: 16px; height: 16px; border-bottom: 2px solid var(--green); border-right: 2px solid var(--green); }
+  .drop-icon-wrap { width: 60px; height: 60px; border: 1px solid var(--border2); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; color: var(--green); font-size: 22px; }
+  .drop-title { font-family: var(--mono); font-size: 18px; color: var(--text); letter-spacing: 2px; margin-bottom: 8px; }
+  .drop-sub { font-size: 12px; color: var(--text-muted); font-family: var(--mono); margin-bottom: 28px; line-height: 1.7; }
+  .drop-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .drop-btn { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; padding: 8px 20px; border: 1px solid var(--border2); background: transparent; color: #888; cursor: pointer; transition: all .15s; border-radius: 2px; }
+  .drop-btn:hover, .drop-btn.primary { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+  /* VIEWS */
+  #slider-view, #side-view { position: absolute; inset: 0; display: none; z-index: 1; }
+  #slider-view.show { display: block; }
+  #side-view.show { display: flex; }
+  #slider-canvas { display: block; width: 100%; height: 100%; }
+
+  #divider { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--green); box-shadow: 0 0 10px var(--green-glow); z-index: 20; cursor: ew-resize; transform: translateX(-50%); pointer-events: none; }
+  #divider-hit { position: absolute; top: 0; bottom: 0; width: 28px; transform: translateX(-50%); z-index: 21; cursor: ew-resize; }
+  #divider-handle { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 32px; height: 32px; border-radius: 50%; background: var(--bg); border: 1.5px solid var(--green); box-shadow: 0 0 12px var(--green-glow); display: flex; align-items: center; justify-content: center; pointer-events: none; color: var(--green); }
+
+  .side-pane { flex: 1; position: relative; overflow: hidden; min-width: 0; }
+  .side-pane canvas { display: block; width: 100%; height: 100%; position: absolute; inset: 0; }
+  #side-divider-bar { width: 1px; flex-shrink: 0; background: var(--border2); }
+
+  /* LABELS */
+  .img-label { position: absolute; top: 14px; z-index: 30; display: flex; align-items: center; background: rgba(8,8,8,.85); border: 1px solid var(--border2); padding: 4px 10px; border-radius: 2px; backdrop-filter: blur(4px); pointer-events: auto; gap: 6px; }
+  .img-label.left  { left: 14px; }
+  .img-label.right { right: 14px; }
+  .label-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+  .label-dot.b { background: #00a8ff; }
+  .img-label input { background: transparent; border: none; outline: none; color: #ccc; font-family: var(--mono); font-size: 11px; letter-spacing: .5px; width: 110px; cursor: text; }
+
+  .no-img-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; z-index: 5; transition: background .2s; }
+  .no-img-overlay:hover { background: rgba(118,185,0,.04); }
+  .no-img-overlay svg { opacity: .2; color: var(--green); }
+  .no-img-overlay span { font-family: var(--mono); font-size: 11px; color: var(--text-muted); }
+
+  /* IMAGE INFO PILLS */
+  .img-info { position: absolute; bottom: 14px; z-index: 30; display: none; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 260px; }
+  .img-info.left  { left: 14px; }
+  .img-info.right { right: 14px; text-align: right; }
+  .img-info.visible { display: flex; }
+  .info-pill { font-family: var(--mono); font-size: 10px; letter-spacing: .5px; padding: 3px 8px; border-radius: 2px; background: rgba(8,8,8,.85); border: 1px solid var(--border2); backdrop-filter: blur(4px); color: #777; white-space: nowrap; }
+  .info-pill b { color: #aaa; font-weight: 400; }
+
+  /* BOTTOM BAR */
+  #bottom-bar { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 16px; background: var(--panel); border-top: 1px solid var(--border); flex-shrink: 0; z-index: 40; }
+  .bar-label { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; color: var(--text-muted); white-space: nowrap; }
+  #zoom-range { -webkit-appearance: none; width: 130px; height: 3px; background: var(--border2); border-radius: 2px; outline: none; accent-color: var(--green); }
+  #zoom-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--green); cursor: pointer; box-shadow: 0 0 5px var(--green-glow); }
+  #zoom-display { font-family: var(--mono); font-size: 11px; color: var(--green); min-width: 42px; }
+  .bar-btn { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; padding: 3px 9px; border: 1px solid var(--border2); background: transparent; color: var(--text-muted); cursor: pointer; border-radius: 2px; transition: all .12s; }
+  .bar-btn:hover { color: #aaa; border-color: #333; }
+  #coord-display { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--text-muted); letter-spacing: .5px; min-width: 100px; text-align: right; }
+
+  /* TOAST */
+  #toast {
+    position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--panel); border: 1px solid var(--border2); padding: 10px 20px;
+    font-family: var(--mono); font-size: 12px; color: var(--text); border-radius: 3px;
+    opacity: 0; transition: all .3s; z-index: 200; white-space: nowrap; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error { border-color: #ff4444; color: #ff4444; }
+
+  /* SHARE MODAL */
+  #share-modal {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(0,0,0,.8); display: none;
+    align-items: center; justify-content: center;
+  }
+  #share-modal.show { display: flex; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--border2);
+    padding: 32px 36px; max-width: 480px; width: 90%; position: relative;
+  }
+  .modal-box::before { content: ''; position: absolute; top: -1px; left: -1px; width: 14px; height: 14px; border-top: 2px solid var(--green); border-left: 2px solid var(--green); }
+  .modal-box::after  { content: ''; position: absolute; bottom: -1px; right: -1px; width: 14px; height: 14px; border-bottom: 2px solid var(--green); border-right: 2px solid var(--green); }
+  .modal-title { font-family: var(--mono); font-size: 14px; letter-spacing: 2px; color: var(--green); margin-bottom: 20px; }
+  .modal-status { font-family: var(--mono); font-size: 11px; color: var(--text-muted); margin-bottom: 16px; min-height: 18px; }
+  .modal-url-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .modal-url {
+    flex: 1; background: #0a0a0a; border: 1px solid var(--border2);
+    color: #aaa; font-family: var(--mono); font-size: 11px;
+    padding: 8px 10px; border-radius: 2px; outline: none; cursor: text;
+  }
+  .modal-copy-btn { font-family: var(--mono); font-size: 11px; letter-spacing: 1px; padding: 8px 14px; border: 1px solid var(--green); background: var(--green-dim); color: var(--green); cursor: pointer; border-radius: 2px; white-space: nowrap; transition: all .15s; }
+  .modal-copy-btn:hover { background: rgba(118,185,0,.2); }
+  .modal-close { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; padding: 6px 16px; border: 1px solid var(--border2); background: transparent; color: var(--text-muted); cursor: pointer; border-radius: 2px; transition: all .15s; }
+  .modal-close:hover { border-color: #444; color: #888; }
+  .progress-bar { height: 2px; background: var(--border2); border-radius: 1px; margin-bottom: 16px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--green); width: 0%; transition: width .4s ease; border-radius: 1px; }
+
+  input[type=file] { display: none; }
+  #main.drag-over { outline: 2px dashed var(--green); outline-offset: -4px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="header">
+    <div class="logo-block">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="logo-eye"></div>
+          <span class="logo-text">ICAT</span>
+        </div>
+        <div class="logo-sub">Image Comparison &amp; Analysis Tool</div>
+      </div>
+    </div>
+    <div class="toolbar-group">
+      <button class="tb-btn active" id="btn-slider">⟺ SLIDER</button>
+      <button class="tb-btn" id="btn-side">▐▌ SIDE BY SIDE</button>
+    </div>
+    <div class="sep"></div>
+    <div class="toolbar-group">
+      <button class="tb-btn upload" onclick="triggerUpload('A')"><span>A</span> Upload Image A</button>
+      <button class="tb-btn upload" onclick="triggerUpload('B')"><span>B</span> Upload Image B</button>
+    </div>
+    <div class="sep"></div>
+    <button class="tb-btn share-btn" id="share-btn" onclick="openShareModal()" disabled>⬆ SHARE</button>
+    <div id="header-right">
+      <span class="version-tag">v1.0</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="drop-screen">
+      <div class="drop-frame">
+        <div class="drop-icon-wrap">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+        </div>
+        <div class="drop-title">LOAD IMAGES</div>
+        <div class="drop-sub">Upload two images to compare them<br>side-by-side or with a slider overlay</div>
+        <div class="drop-actions">
+          <button class="drop-btn primary" onclick="triggerUpload('A')">Upload Image A</button>
+          <button class="drop-btn" onclick="triggerUpload('B')">Upload Image B</button>
+        </div>
+        <div style="margin-top:20px;font-family:var(--mono);font-size:10px;color:var(--text-muted)">or drag & drop two images anywhere</div>
+      </div>
+    </div>
+
+    <div id="slider-view">
+      <canvas id="slider-canvas"></canvas>
+      <div id="divider">
+        <div id="divider-handle">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/><polyline points="9 18 15 12 9 6" style="transform:translateX(2px)"/></svg>
+        </div>
+      </div>
+      <div id="divider-hit"></div>
+      <div class="img-label left"><div class="label-dot"></div><input id="inp-sA" value="Image A" /></div>
+      <div class="img-label right"><div class="label-dot b"></div><input id="inp-sB" value="Image B" /></div>
+      <div class="img-info left" id="info-sA"></div>
+      <div class="img-info right" id="info-sB"></div>
+    </div>
+
+    <div id="side-view">
+      <div class="side-pane" id="pane-A">
+        <canvas id="canvas-A"></canvas>
+        <div class="no-img-overlay" id="noA" onclick="triggerUpload('A')">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>Click to load Image A</span>
+        </div>
+        <div class="img-label left"><div class="label-dot"></div><input id="inp-pA" value="Image A" /></div>
+        <div class="img-info left" id="info-pA"></div>
+      </div>
+      <div id="side-divider-bar"></div>
+      <div class="side-pane" id="pane-B">
+        <canvas id="canvas-B"></canvas>
+        <div class="no-img-overlay" id="noB" onclick="triggerUpload('B')">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          <span>Click to load Image B</span>
+        </div>
+        <div class="img-label right"><div class="label-dot b"></div><input id="inp-pB" value="Image B" /></div>
+        <div class="img-info right" id="info-pB"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="bottom-bar">
+    <span class="bar-label">ZOOM</span>
+    <input type="range" id="zoom-range" min="10" max="500" value="100" step="1">
+    <span id="zoom-display">100%</span>
+    <div class="sep"></div>
+    <button class="bar-btn" onclick="resetView()">RESET</button>
+    <button class="bar-btn" onclick="fitView()">FIT</button>
+    <span id="coord-display">x: — &nbsp; y: —</span>
+  </div>
+</div>
+
+<!-- SHARE MODAL -->
+<div id="share-modal">
+  <div class="modal-box">
+    <div class="modal-title">⬆ SHARE COMPARISON</div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="modal-status" id="modal-status">Ready to upload images to Supabase.</div>
+    <div class="modal-url-row">
+      <input class="modal-url" id="share-url" readonly placeholder="Link will appear here..." />
+      <button class="modal-copy-btn" id="copy-btn" onclick="copyLink()">COPY</button>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="modal-close" onclick="closeShareModal()">CLOSE</button>
+      <button class="modal-copy-btn" id="upload-btn" onclick="startUpload()">UPLOAD & GENERATE LINK</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<input type="file" id="fileA" accept="image/*" onchange="loadFile(event,'A')">
+<input type="file" id="fileB" accept="image/*" onchange="loadFile(event,'B')">
+
+<script>
+// ── SUPABASE CONFIG ────────────────────────────────────
+const SUPABASE_URL  = 'https://celzqwaqhcojaspzjpgh.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlbHpxd2FxaGNvamFzcHpqcGdoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ2MzM0MDksImV4cCI6MjA5MDIwOTQwOX0.RCA-VpXdgGXjGezqXGezGClNsCEOH543HqzSVF8c-sQ';
+const BUCKET        = 'icat-images';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+// ── STATE ──────────────────────────────────────────────
+const S = {
+  mode: 'slider',
+  imgA: null, imgB: null,
+  fileA: null, fileB: null,
+  zoom: 1, panX: 0, panY: 0,
+  sliderX: 0.5,
+  draggingSlider: false,
+  isPanning: false, panLast: null,
+  hasLoaded: false,
+};
+
+// ── UPLOAD FILES ───────────────────────────────────────
+function triggerUpload(w) { document.getElementById('file'+w).click(); }
+function loadFile(e, w) {
+  const f = e.target.files[0]; if (!f) return;
+  e.target.value = '';
+  S['file'+w] = f;
+  const img = new Image();
+  img.onload = () => { S['img'+w] = img; afterLoad(); };
+  img.src = URL.createObjectURL(f);
+}
+function afterLoad() {
+  if (!S.imgA && !S.imgB) return;
+  const isFirst = !S.hasLoaded;
+  if (isFirst) { S.hasLoaded = true; }
+  document.getElementById('drop-screen').classList.add('hide');
+  if (S.imgA) document.getElementById('noA').style.display = 'none';
+  if (S.imgB) document.getElementById('noB').style.display = 'none';
+  const canShare = S.imgA && S.imgB;
+  document.getElementById('share-btn').disabled = !canShare;
+  syncLabels();
+  updateInfoPills();
+  applyMode();
+  if (isFirst) setZoom(100);
+  else render();
+}
+
+// ── MODE ───────────────────────────────────────────────
+function setMode(m) {
+  S.mode = m;
+  document.getElementById('btn-slider').classList.toggle('active', m === 'slider');
+  document.getElementById('btn-side').classList.toggle('active', m === 'side');
+  applyMode(); render();
+}
+function applyMode() {
+  document.getElementById('slider-view').className = S.mode === 'slider' ? 'show' : '';
+  document.getElementById('side-view').className   = S.mode === 'side'   ? 'show' : '';
+}
+document.getElementById('btn-slider').onclick = () => setMode('slider');
+document.getElementById('btn-side').onclick   = () => setMode('side');
+
+// ── RENDER ─────────────────────────────────────────────
+const mainEl = document.getElementById('main');
+function drawImgFit(ctx, img, panX, panY, zoom) {
+  if (!img) return;
+  const cw = ctx.canvas.width, ch = ctx.canvas.height;
+  const scale = Math.min(cw / img.width, ch / img.height) * zoom;
+  const iw = img.width * scale, ih = img.height * scale;
+  ctx.drawImage(img, (cw-iw)/2 + panX, (ch-ih)/2 + panY, iw, ih);
+}
+function renderSlider() {
+  const cv = document.getElementById('slider-canvas');
+  cv.width = mainEl.clientWidth; cv.height = mainEl.clientHeight;
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const sx = Math.round(cv.width * S.sliderX);
+  if (S.imgA) { ctx.save(); ctx.beginPath(); ctx.rect(0,0,sx,cv.height); ctx.clip(); ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,cv.width,cv.height); drawImgFit(ctx,S.imgA,S.panX,S.panY,S.zoom); ctx.restore(); }
+  if (S.imgB) { ctx.save(); ctx.beginPath(); ctx.rect(sx,0,cv.width-sx,cv.height); ctx.clip(); ctx.fillStyle='#0a0a0a'; ctx.fillRect(0,0,cv.width,cv.height); drawImgFit(ctx,S.imgB,S.panX,S.panY,S.zoom); ctx.restore(); }
+  document.getElementById('divider').style.left = sx + 'px';
+  document.getElementById('divider-hit').style.left = sx + 'px';
+}
+function renderSide() {
+  ['A','B'].forEach(w => {
+    const cv = document.getElementById('canvas-'+w);
+    const pane = document.getElementById('pane-'+w);
+    cv.width = pane.clientWidth; cv.height = pane.clientHeight;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0,0,cv.width,cv.height);
+    if (S['img'+w]) drawImgFit(ctx, S['img'+w], S.panX, S.panY, S.zoom);
+  });
+}
+function render() { if (S.mode === 'slider') renderSlider(); else renderSide(); }
+
+// ── ZOOM / PAN ─────────────────────────────────────────
+function setZoom(v) {
+  S.zoom = v/100;
+  document.getElementById('zoom-range').value = v;
+  document.getElementById('zoom-display').textContent = Math.round(v)+'%';
+  render();
+}
+function resetView() { S.panX=0; S.panY=0; setZoom(100); }
+function fitView() {
+  S.panX=0; S.panY=0;
+  const img = S.imgA || S.imgB; if (!img) { setZoom(100); return; }
+  const fw = S.mode==='side' ? mainEl.clientWidth/2 : mainEl.clientWidth;
+  const scale = Math.min(fw/img.width, mainEl.clientHeight/img.height);
+  setZoom(Math.max(10, Math.min(500, Math.round(scale*100))));
+}
+document.getElementById('zoom-range').oninput = e => setZoom(parseInt(e.target.value));
+
+// slider drag
+document.getElementById('divider-hit').addEventListener('mousedown', e => { S.draggingSlider=true; e.stopPropagation(); e.preventDefault(); });
+document.getElementById('divider-hit').addEventListener('touchstart', e => { S.draggingSlider=true; e.stopPropagation(); }, {passive:true});
+
+// pan
+mainEl.addEventListener('mousedown', e => {
+  if (e.target.closest('#divider-hit') || e.target.closest('.img-label') || e.target.closest('.no-img-overlay')) return;
+  S.isPanning=true; S.panLast={x:e.clientX,y:e.clientY};
+});
+mainEl.addEventListener('touchstart', e => {
+  if (e.touches.length===1) { S.isPanning=true; S.panLast={x:e.touches[0].clientX,y:e.touches[0].clientY}; }
+}, {passive:true});
+
+document.addEventListener('mousemove', e => {
+  if (S.draggingSlider) {
+    const r = mainEl.getBoundingClientRect();
+    S.sliderX = Math.max(0.01, Math.min(0.99, (e.clientX-r.left)/r.width));
+    renderSlider(); return;
+  }
+  if (S.isPanning && S.panLast) {
+    S.panX += e.clientX - S.panLast.x;
+    S.panY += e.clientY - S.panLast.y;
+    S.panLast = {x:e.clientX, y:e.clientY};
+    render();
+  }
+  updateCoords(e.clientX, e.clientY);
+});
+document.addEventListener('touchmove', e => {
+  if (S.draggingSlider && e.touches.length===1) {
+    const r = mainEl.getBoundingClientRect();
+    S.sliderX = Math.max(0.01, Math.min(0.99, (e.touches[0].clientX-r.left)/r.width));
+    renderSlider();
+  } else if (S.isPanning && S.panLast && e.touches.length===1) {
+    S.panX += e.touches[0].clientX - S.panLast.x;
+    S.panY += e.touches[0].clientY - S.panLast.y;
+    S.panLast = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    render();
+  }
+}, {passive:true});
+document.addEventListener('mouseup', () => { S.draggingSlider=false; S.isPanning=false; S.panLast=null; });
+document.addEventListener('touchend', () => { S.draggingSlider=false; S.isPanning=false; S.panLast=null; });
+mainEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const nv = Math.max(10, Math.min(500, Math.round(S.zoom*100) + (e.deltaY>0?-8:8)));
+  setZoom(nv);
+}, {passive:false});
+
+function updateCoords(cx, cy) {
+  const img = S.imgA || S.imgB; if (!img) return;
+  const r = mainEl.getBoundingClientRect();
+  const cw=r.width, ch=r.height;
+  const scale = Math.min(cw/img.width, ch/img.height)*S.zoom;
+  const ix=(cw-img.width*scale)/2+S.panX, iy=(ch-img.height*scale)/2+S.panY;
+  const px=Math.round((cx-r.left-ix)/scale), py=Math.round((cy-r.top-iy)/scale);
+  document.getElementById('coord-display').textContent =
+    (px>=0&&px<=img.width&&py>=0&&py<=img.height) ? 'x: '+px+'  y: '+py : 'x: —  y: —';
+}
+
+// drag & drop files
+function handleDroppedFiles(files) {
+  const imgs = files.filter(f => f.type.startsWith('image/'));
+  if (imgs.length === 0) return;
+
+  // If two images dropped at once, assign A and B directly
+  if (imgs.length >= 2) {
+    assignFile('A', imgs[0]);
+    assignFile('B', imgs[1]);
+    return;
+  }
+
+  // Single image: fill whichever slot is empty first, then overwrite B
+  if (!S.imgA) {
+    assignFile('A', imgs[0]);
+  } else if (!S.imgB) {
+    assignFile('B', imgs[0]);
+  } else {
+    // Both full — replace B
+    assignFile('B', imgs[0]);
+  }
+}
+
+function assignFile(w, file) {
+  S['file'+w] = file;
+  const img = new Image();
+  img.onload = () => { S['img'+w] = img; afterLoad(); };
+  img.src = URL.createObjectURL(file);
+}
+
+mainEl.addEventListener('dragover', e => { e.preventDefault(); mainEl.classList.add('drag-over'); });
+mainEl.addEventListener('dragleave', () => mainEl.classList.remove('drag-over'));
+mainEl.addEventListener('drop', e => {
+  e.preventDefault(); mainEl.classList.remove('drag-over');
+  handleDroppedFiles(Array.from(e.dataTransfer.files));
+});
+document.getElementById('drop-screen').addEventListener('dragover', e => e.preventDefault());
+document.getElementById('drop-screen').addEventListener('drop', e => {
+  e.preventDefault();
+  handleDroppedFiles(Array.from(e.dataTransfer.files));
+});
+
+// ── IMAGE INFO PILLS ───────────────────────────────────
+function formatSize(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/(1024*1024)).toFixed(2) + ' MB';
+}
+function pillHTML(img, file) {
+  const dim = img ? '<b>'+img.naturalWidth+'×'+img.naturalHeight+'</b>' : '—';
+  const sz  = file ? formatSize(file.size) : '—';
+  return '<div class="info-pill">'+dim+'</div><div class="info-pill">'+sz+'</div>';
+}
+function updateInfoPills() {
+  const ids = [['info-sA','info-pA','A'],['info-sB','info-pB','B']];
+  ids.forEach(([sid, pid, w]) => {
+    const html = pillHTML(S['img'+w], S['file'+w]);
+    const show = !!S['img'+w];
+    [sid, pid].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = html;
+      el.classList.toggle('visible', show);
+    });
+  });
+}
+
+// also update pills when loading from URL (no file object, show dims only)
+function updateInfoPillsFromUrl() {
+  [['info-sA','info-pA','A'],['info-sB','info-pB','B']].forEach(([sid,pid,w]) => {
+    const img = S['img'+w];
+    if (!img) return;
+    const html = '<div class="info-pill"><b>'+img.naturalWidth+'×'+img.naturalHeight+'</b></div>';
+    [sid,pid].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = html;
+      el.classList.add('visible');
+    });
+  });
+}
+function syncLabels() {
+  ['inp-sA','inp-pA'].forEach(id => { document.getElementById(id).oninput = function(){ document.getElementById('inp-sA').value=this.value; document.getElementById('inp-pA').value=this.value; }; });
+  ['inp-sB','inp-pB'].forEach(id => { document.getElementById(id).oninput = function(){ document.getElementById('inp-sB').value=this.value; document.getElementById('inp-pB').value=this.value; }; });
+}
+syncLabels();
+
+// ── TOAST ──────────────────────────────────────────────
+function showToast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 3000);
+}
+
+// ── SHARE MODAL ────────────────────────────────────────
+function openShareModal() {
+  document.getElementById('share-modal').classList.add('show');
+  document.getElementById('share-url').value = '';
+  document.getElementById('modal-status').textContent = 'Ready to upload images to Supabase.';
+  document.getElementById('progress-fill').style.width = '0%';
+  document.getElementById('upload-btn').disabled = false;
+  document.getElementById('upload-btn').textContent = 'UPLOAD & GENERATE LINK';
+  document.getElementById('copy-btn').style.display = '';
+}
+function closeShareModal() {
+  document.getElementById('share-modal').classList.remove('show');
+}
+
+function setProgress(pct, status) {
+  document.getElementById('progress-fill').style.width = pct + '%';
+  if (status) document.getElementById('modal-status').textContent = status;
+}
+
+async function startUpload() {
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true;
+  btn.textContent = 'UPLOADING...';
+  document.getElementById('share-url').value = '';
+
+  try {
+    const id = Math.random().toString(36).slice(2, 10);
+    const labelA = document.getElementById('inp-sA').value || 'Image A';
+    const labelB = document.getElementById('inp-sB').value || 'Image B';
+
+    // Upload image A
+    setProgress(10, 'Uploading Image A...');
+    const extA = S.fileA.name.split('.').pop();
+    const pathA = id + '/a.' + extA;
+    const { error: errA } = await sb.storage.from(BUCKET).upload(pathA, S.fileA, { cacheControl: '31536000', upsert: true });
+    if (errA) throw new Error('Image A upload failed: ' + errA.message);
+
+    setProgress(45, 'Uploading Image B...');
+    const extB = S.fileB.name.split('.').pop();
+    const pathB = id + '/b.' + extB;
+    const { error: errB } = await sb.storage.from(BUCKET).upload(pathB, S.fileB, { cacheControl: '31536000', upsert: true });
+    if (errB) throw new Error('Image B upload failed: ' + errB.message);
+
+    setProgress(70, 'Saving comparison record...');
+    const { data: urlAData } = sb.storage.from(BUCKET).getPublicUrl(pathA);
+    const { data: urlBData } = sb.storage.from(BUCKET).getPublicUrl(pathB);
+
+    const { error: dbErr } = await sb.from('comparisons').insert({
+      id, label_a: labelA, label_b: labelB,
+      url_a: urlAData.publicUrl, url_b: urlBData.publicUrl,
+      expires_at: new Date(Date.now() + 48*60*60*1000).toISOString()
+    });
+    if (dbErr) throw new Error('Failed to save record: ' + dbErr.message);
+
+    const expiresAt = new Date(Date.now() + 48*60*60*1000);
+    const expiryStr = expiresAt.toLocaleString([], {dateStyle:'medium', timeStyle:'short'});
+    setProgress(100, 'Done! Expires ' + expiryStr + '.');
+    const shareLink = window.location.origin + window.location.pathname + '?id=' + id;
+    document.getElementById('share-url').value = shareLink;
+    btn.textContent = 'DONE';
+
+  } catch (err) {
+    setProgress(0, 'Error: ' + err.message);
+    document.getElementById('modal-status').style.color = '#ff4444';
+    btn.disabled = false;
+    btn.textContent = 'RETRY';
+  }
+}
+
+function copyLink() {
+  const val = document.getElementById('share-url').value;
+  if (!val) return;
+  navigator.clipboard.writeText(val).then(() => showToast('Link copied to clipboard!', 'success'));
+}
+
+// ── LOAD FROM URL PARAM ────────────────────────────────
+async function loadFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const id = params.get('id');
+  if (!id) return;
+
+  document.getElementById('drop-screen').classList.add('hide');
+  document.getElementById('slider-view').className = 'show';
+  document.getElementById('modal-status');
+
+  // Show loading overlay
+  const loadDiv = document.createElement('div');
+  loadDiv.style.cssText = 'position:absolute;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(6,6,6,.95)';
+  loadDiv.innerHTML = '<div style="font-family:var(--mono);font-size:12px;color:var(--green);letter-spacing:2px" id="load-status">LOADING COMPARISON...</div><div style="width:200px;height:2px;background:#1e1e1e;border-radius:1px"><div id="load-bar" style="height:100%;width:0%;background:var(--green);border-radius:1px;transition:width .3s"></div></div>';
+  mainEl.appendChild(loadDiv);
+
+  const setLS = (pct, msg) => {
+    document.getElementById('load-bar').style.width = pct+'%';
+    document.getElementById('load-status').textContent = msg;
+  };
+
+  try {
+    setLS(20, 'FETCHING RECORD...');
+    const { data, error } = await sb.from('comparisons').select('*').eq('id', id).single();
+    if (error || !data) throw new Error('Comparison not found');
+
+    // Check expiry
+    if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      document.getElementById('load-bar').style.width = '100%';
+      loadDiv.innerHTML = `
+        <div style="text-align:center;padding:40px">
+          <div style="font-family:var(--mono);font-size:11px;letter-spacing:3px;color:#ff4444;margin-bottom:16px">LINK EXPIRED</div>
+          <div style="font-family:var(--mono);font-size:13px;color:#555;line-height:1.8">This comparison link has expired.<br>Links are valid for 48 hours after creation.</div>
+          <div style="margin-top:24px">
+            <button onclick="window.location.href=window.location.pathname" style="font-family:var(--mono);font-size:11px;letter-spacing:1px;padding:8px 20px;border:1px solid #2a2a2a;background:transparent;color:#888;cursor:pointer;border-radius:2px">START NEW COMPARISON</button>
+          </div>
+        </div>`;
+      return;
+    }
+
+    setLS(50, 'LOADING IMAGE A...');
+    const imgA = await loadImageFromUrl(data.url_a);
+    S.imgA = imgA;
+
+    setLS(80, 'LOADING IMAGE B...');
+    const imgB = await loadImageFromUrl(data.url_b);
+    S.imgB = imgB;
+
+    document.getElementById('inp-sA').value = data.label_a || 'Image A';
+    document.getElementById('inp-pA').value = data.label_a || 'Image A';
+    document.getElementById('inp-sB').value = data.label_b || 'Image B';
+    document.getElementById('inp-pB').value = data.label_b || 'Image B';
+
+    document.getElementById('noA').style.display = 'none';
+    document.getElementById('noB').style.display = 'none';
+    document.getElementById('share-btn').disabled = false;
+
+    setLS(100, 'READY');
+    updateInfoPillsFromUrl();
+    setTimeout(() => { mainEl.removeChild(loadDiv); applyMode(); setZoom(100); }, 400);
+
+  } catch(err) {
+    document.getElementById('load-status').textContent = 'ERROR: ' + err.message;
+    document.getElementById('load-status').style.color = '#ff4444';
+  }
+}
+
+function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Could not load image'));
+    img.src = url;
+  });
+}
+
+// ── RESIZE ─────────────────────────────────────────────
+let resizeTimer;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(render, 80); });
+
+// ── INIT ───────────────────────────────────────────────
+applyMode();
+render();
+loadFromUrl();
+</script>
+</body>
+</html>
